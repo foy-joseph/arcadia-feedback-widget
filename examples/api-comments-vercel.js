@@ -146,11 +146,12 @@ module.exports = async (req, res) => {
               updated_at = now()
       `;
 
-      // Fire Slack notifications for new comments (best-effort, doesn't block)
+      // Forward new comments to Slack. Awaited so the function doesn't get
+      // killed mid-fetch by Vercel's serverless termination.
       const newOnes = diffNewComments(priorStore, body);
-      Promise.all(newOnes.map(postToSlack)).catch((err) =>
-        console.error("[feedback] Slack batch failed:", err)
-      );
+      if (newOnes.length) {
+        await Promise.allSettled(newOnes.map(postToSlack));
+      }
 
       return res.status(200).json({ ok: true, newComments: newOnes.length });
     }
