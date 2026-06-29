@@ -58,9 +58,13 @@ function diffNewComments(oldStore, newStore) {
 }
 
 // --- Slack forwarding ----------------------------------------------------
+// Preference order: webhook URL > bot token > user token (xoxp fallback).
+// User-token path exists because new channels require a bot to be invited before
+// chat:write.public works — until then, the user token still posts (as an app).
 async function postToSlack(c) {
   const webhookUrl = process.env.SLACK_FEEDBACK_WEBHOOK_URL;
   const botToken   = process.env.SLACK_BOT_TOKEN;
+  const userToken  = process.env.SLACK_USER_TOKEN;
   const channel    = process.env.SLACK_FEEDBACK_CHANNEL;
 
   const xPct = (typeof c.xPct === "number") ? `${(c.xPct * 100).toFixed(0)}%` : "?";
@@ -77,18 +81,29 @@ async function postToSlack(c) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, unfurl_links: false, unfurl_media: false }),
       });
-    } else if (botToken && channel) {
-      await fetch("https://slack.com/api/chat.postMessage", {
+      return;
+    }
+    if (botToken && channel) {
+      const r = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${botToken}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
+        headers: { "Authorization": `Bearer ${botToken}`, "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ channel, text, unfurl_links: false, unfurl_media: false }),
       });
-    } else {
-      console.warn("[feedback] No Slack credentials configured — skipping forward.");
+      const result = await r.json();
+      if (result.ok) return;
+      console.warn("[feedback] bot post failed:", result.error, "— falling back to user token");
     }
+    if (userToken && channel) {
+      const r = await fetch("https://slack.com/api/chat.postMessage", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${userToken}`, "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ channel, text, unfurl_links: false, unfurl_media: false }),
+      });
+      const result = await r.json();
+      if (!result.ok) console.warn("[feedback] user-token post failed:", result.error);
+      return;
+    }
+    console.warn("[feedback] No Slack credentials configured — skipping forward.");
   } catch (err) {
     console.error("[feedback] Slack forward failed:", err.message || err);
   }
