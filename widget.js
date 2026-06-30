@@ -351,14 +351,16 @@
       e.preventDefault();
       e.stopPropagation();
 
+      // Convert click to frame-relative document coords.
+      // pageY = clientY + scrollY (document-relative).
+      // frameRect.top is viewport-relative — adding scrollY gives frame's document top.
+      // Difference = offset within frame, in document coords (matches pin storage format).
       const frameRect = frame.getBoundingClientRect();
       const xPct = (e.clientX - frameRect.left) / frameRect.width;
-      const yPx = e.clientY - frameRect.top + (window.scrollY || 0) - (frameRect.top + (window.scrollY || 0) - frameRect.top);
-      // simpler: scrollY-relative offset within frame
-      const yPxClean = e.pageY - (frameRect.top + (window.scrollY || 0));
+      const yPx = e.pageY - (frameRect.top + (window.scrollY || 0));
 
       togglePlacing();
-      openNewCommentPopup({ xPct, yPx: yPxClean });
+      openNewCommentPopup({ xPct, yPx });
     });
 
     function openNewCommentPopup(pos) {
@@ -417,11 +419,14 @@
           <button class="resolve" id="${cfg.nsPrefix}-res">${c.resolved ? 'Reopen' : 'Resolve'}</button>
         </div>
       `;
+      // pinRect.top - frameRect.top is already the frame-relative offset
+      // (both are viewport-relative; the difference cancels out scrollY).
+      // Don't add scrollY again — that double-counts and pushes the popup off-screen.
       const pinRect = pin.getBoundingClientRect();
       const frameRect = frame.getBoundingClientRect();
       placePopup(popup, {
         xPct: (pinRect.left - frameRect.left + 18) / frameRect.width,
-        yPx: pinRect.top - frameRect.top + (window.scrollY || 0),
+        yPx: pinRect.top - frameRect.top,
       });
 
       popup.querySelector(`#${cfg.nsPrefix}-res`).onclick = async () => {
